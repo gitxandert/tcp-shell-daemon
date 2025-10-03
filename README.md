@@ -1,4 +1,4 @@
-# Shell Server
+# TCP Shell Daemon
 
 This application currently sets up a TCP/IP client/server connection and forks clients into their own private shell.
 
