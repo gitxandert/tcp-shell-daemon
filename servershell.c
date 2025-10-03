@@ -130,7 +130,7 @@ int main(void) {
     exit(1);
   }
 
-  if (listen(sockfd, BACKLOG == -1)) {
+  if (listen(sockfd, BACKLOG) == -1) {
     perror("listen");
     exit(1);
   }
@@ -170,7 +170,6 @@ int main(void) {
     } else {
       perror("fork failed");
     }
-    close(new_fd);
   }
 
   return 0;
