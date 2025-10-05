@@ -44,9 +44,6 @@ typedef struct _vm_page {
   uint64_t  page_index;
   bool      dirty;
   bool      referenced;
-  
-  struct _vm_page *prev;
-  struct _vm_page *next;
 
 } vm_page_t;
 
@@ -81,7 +78,7 @@ typedef struct _hashmap_entry {
 } hashmap_entry_t;
 
 // hashmap to keep track of inodes/radix-trees
-typedef struct {
+typedef struct _hashmap {
   hashmap_entry_t **buckets;
   // capacity stored as macro
 } hashmap_t;
@@ -94,6 +91,98 @@ typedef struct {
   // capacity stored as macro
   hashmap_t     *map;
 
-} lru_list_t;
+} vm_list_t;
 
-// definitions forthcoming
+// we need:
+// - locks
+// - init functions
+// - hash algorithm
+// - insert into list
+// - insert into hash
+// - insert into tree
+// - look up list
+// - look up hash
+// - look up tree
+// - remove from list
+// - remove from hash
+// - remove from tree
+//
+// So here's the flow:
+// 1. Client opens file.
+// 2. Prebuffer adds n pages from the buffer, either from VM or disk.
+// 3. Feed pages from buffer into audio stream (can use ALSA for this).
+// 4. Fill buffer up to a certain point, then wait until stream requests more.
+//
+// Okay, for now, let's just implement the insert functions.
+
+// assume global list
+vm_list_t VM_LIST;
+
+void vm_list_init() {
+  VM_LIST.head = VM_LIST->tail = NULL;
+  VM_LIST.size = 0;
+  VM_LIST.map = malloc(sizeof(hashmap_entry_t *) * HASH_BUCKETS_CAPACITY);
+}
+
+// hashmap_t functions
+//
+// hash with inode and page index (what would be stored in vm_page_t)
+size_t hash_page(ino_t key, uint64_t page_index) {
+  uint64_t h = (uint64_t)key.inode * 11400714819323198485llu; // Knuth constant
+  h ^= page_index + 0x9e3779b97f4a7c15llu + (h << 6) + (h >> 2);
+  return (size_t)(h % HASH_BUCKETS_CAPACITY);
+}
+
+void insert_into_hashmap(ino_t inode, uint64_t page_index) {
+}
+
+// radix_tree_t functions
+//
+size_t get_radix_byte(uint64_t page_index, int level) {
+  
+}
+
+bool is_in_tree(radix_tree_t *tree, uint64_t page_index) {
+  radix_node_t *cur = tree->root;
+  int level = 0;
+  while (!cur->page) {
+    size_t cur_byte = get_radix_byte(page_index, level);
+    if (cur->slots[cur_byte])
+      cur = cur->slots[cur_byte];
+    else
+      return false;
+
+    level++;
+  }
+
+  if (cur->page->page_index == page_index)
+    return true;
+
+  return false;
+}
+
+// verify page is cached
+//
+bool is_in_memory(ino_t inode, uint64_t page_index) {
+  // if no hashmap_entry for this file, return
+  size_t hm_idx = hash_page(inode, page_index);
+  if (!VM_LIST.map[hm_idx])
+    return false;
+
+  hashmap_entry_t *hm_ent = VM_LIST.map[hm_idx];
+
+  // if inode not in hash, return false
+  while (hm_ent->key != inode && hm_ent->next != NULL)
+    hm_ent = hm_ent->next;
+  if (hm_ent->key != inode)
+    return false;
+
+  // if not in tree, return false
+  radix_tree_t *tree = &(hm_ent->file->tree);
+  if (tree->root == NULL)
+    return false;
+  if (!is_in_tree(tree, page_index))
+    return false;
+
+  return true;
+}
