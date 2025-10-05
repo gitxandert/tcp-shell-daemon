@@ -126,9 +126,9 @@ void vm_list_init() {
 
 // hashmap_t functions
 //
-// hash with inode and page index (what would be stored in vm_page_t)
+// hash with inode and page index (i.e. with what would be stored in vm_page_t)
 size_t hash_page(ino_t key, uint64_t page_index) {
-  uint64_t h = (uint64_t)key.inode * 11400714819323198485llu; // Knuth constant
+  uint64_t h = (uint64_t)key * 11400714819323198485llu; // Knuth constant
   h ^= page_index + 0x9e3779b97f4a7c15llu + (h << 6) + (h >> 2);
   return (size_t)(h % HASH_BUCKETS_CAPACITY);
 }
@@ -139,17 +139,23 @@ void insert_into_hashmap(ino_t inode, uint64_t page_index) {
 // radix_tree_t functions
 //
 size_t get_radix_byte(uint64_t page_index, int level) {
-  
+  int      shift = level * 4;
+  uint64_t mask  = 0xFFFF000000000000 >> shift;
+  uint64_t r_b   = mask & page_index;
+
+  return (size_t)(r_b >> (12 - shift));
 }
 
 bool is_in_tree(radix_tree_t *tree, uint64_t page_index) {
   radix_node_t *cur = tree->root;
   int level = 0;
+  // if there's no vm_page_t stored at the current node
+  // then check the slots to see if anything is stored at the next level
   while (!cur->page) {
     size_t cur_byte = get_radix_byte(page_index, level);
-    if (cur->slots[cur_byte])
+    if (cur->slots[cur_byte]) // go to the next level
       cur = cur->slots[cur_byte];
-    else
+    else // the next level at this index is empty
       return false;
 
     level++;
