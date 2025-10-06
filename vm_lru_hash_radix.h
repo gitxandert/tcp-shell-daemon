@@ -139,19 +139,17 @@ void insert_into_hashmap(ino_t inode, uint64_t page_index) {
 // radix_tree_t functions
 //
 size_t get_radix_byte(uint64_t page_index, int level) {
-  int      shift = level * 4;
-  uint64_t mask  = 0xFFFF000000000000 >> shift;
-  uint64_t r_b   = mask & page_index;
+  int shift = (12 - level) * 4;
 
-  return (size_t)(r_b >> (12 - shift));
+  return (size_t)(page_index >> shift & 0xF);
 }
 
-bool is_in_tree(radix_tree_t *tree, uint64_t page_index) {
+bool get_page(radix_tree_t *tree, vm_page_t *ret_page, uint64_t page_index) {
   radix_node_t *cur = tree->root;
   int level = 0;
   // if there's no vm_page_t stored at the current node
   // then check the slots to see if anything is stored at the next level
-  while (!cur->page) {
+  while (cur && !cur->page) {
     size_t cur_byte = get_radix_byte(page_index, level);
     if (cur->slots[cur_byte]) // go to the next level
       cur = cur->slots[cur_byte];
@@ -161,10 +159,37 @@ bool is_in_tree(radix_tree_t *tree, uint64_t page_index) {
     level++;
   }
 
-  if (cur->page->page_index == page_index)
+  if (cur && cur->page && cur->page->page_index == page_index) {
+    ret_page = cur->page;
     return true;
+  }
 
   return false;
+}
+
+void move_to_head(vm_page_t *new_head) {
+  // if this node is already the head of the list or NULL
+  if (VM_LIST.head == new_head || !new_head) 
+   return;
+
+  // previous node points forward to next node
+  if (new_head->prev)
+   new_head->prev->next = new_head->next;
+  // next node points backward to previous node
+  if (new_head->next)
+    new_head->next->prev = new_head->prev;
+
+  // they are no longer pointing to the "current" node
+
+  // current node points forward to list's head
+  new_head->prev = NULL;
+  new_head->next = VM_LIST.head;
+  // list's head points backward to current node
+  VM_LIST.head->prev = new_head;
+
+  // set list's head to current node (next node is old head,
+  // which points back to current node)
+  VM_LIST.head = new_head;
 }
 
 // verify page is cached
@@ -187,8 +212,12 @@ bool is_in_memory(ino_t inode, uint64_t page_index) {
   radix_tree_t *tree = &(hm_ent->file->tree);
   if (tree->root == NULL)
     return false;
-  if (!is_in_tree(tree, page_index))
+
+  // 
+  vm_page_t *req_page = malloc(sizeof(vm_page_t *));
+  if (!get_page(tree, req_page, page_index))
     return false;
 
+  move_to_head(req_page);
   return true;
 }
