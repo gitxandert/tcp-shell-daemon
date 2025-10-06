@@ -2,9 +2,9 @@
  * This is a prototype implementation of a virtual memory subsystem
  * inspired by Linux's page cache. It uses:
  *  - a least-recently-used (LRU) doubly-linked list to maintain
- *    eviction order of cached pages
+ *    eviction order of cached pages.
  *  - a global hashmap to quickly look up inodes (files) that
- *    are currently cached in memory
+ *    are currently cached in memory.
  *  - per-inode radix trees to efficiently locate individual
  *    page indices within a file's cached contents.
  *
@@ -15,8 +15,9 @@
  *    whether the requested page(s) are in memory.
  * 3. If found, serve them from memory and move the corresponding
  *    vm_page_t entries to the head of the LRU list.
- * 4. If missing, load the pages from disk, insert them into the
- *    file's radix tree, and add them to the head of the LRU list.
+ * 4. If missing, map the pages to the virtual memory address, 
+ *    insert them into the file's radix tree, and add them to 
+ *    the head of the LRU list.
  *
  * Eviction:
  * - If the global LRU list reaches capacity (LRU_LIST_MAX_CAPACITY)
@@ -95,15 +96,14 @@ typedef struct {
 
 // we need:
 // - locks
-// - init functions
-// - hash algorithm
-// - insert into list
+// - init functions   V
+// - hash algorithms  V
+// - insert into list V
 // - insert into hash
 // - insert into tree
-// - look up list
-// - look up hash
-// - look up tree
-// - remove from list
+// - look up hash     V
+// - look up tree     V
+// - remove from list V
 // - remove from hash
 // - remove from tree
 //
@@ -119,7 +119,7 @@ typedef struct {
 vm_list_t VM_LIST;
 
 void vm_list_init() {
-  VM_LIST.head = VM_LIST->tail = NULL;
+  VM_LIST.head = VM_LIST.tail = NULL;
   VM_LIST.size = 0;
   VM_LIST.map = malloc(sizeof(hashmap_entry_t *) * HASH_BUCKETS_CAPACITY);
 }
@@ -135,6 +135,8 @@ size_t hash_page(ino_t key, uint64_t page_index) {
 
 void insert_into_hashmap(ino_t inode, uint64_t page_index) {
 }
+//
+// end hashmap_t functions
 
 // radix_tree_t functions
 //
@@ -166,7 +168,27 @@ bool get_page(radix_tree_t *tree, vm_page_t *ret_page, uint64_t page_index) {
 
   return false;
 }
+//
+// end radix_tree_t functions
 
+// vm_list_t functions
+//
+// moves a (new or existing) page to the head
+void push_to_head(vm_page_t* new_head) {
+  if (VM_LIST.head == NULL) {
+    VM_LIST.head = new_head;
+    VM_LIST.tail = VM_LIST.head;
+  } else {
+    new_head->prev = NULL;
+    new_head->next = VM_LIST.head;
+    VM_LIST.head->prev = new_head;
+    VM_LIST.head = new_head;
+    // if this is the second page,
+    // VM_LIST.tail still points to previous head
+  }
+}
+
+// this moves existing nodes to the head
 void move_to_head(vm_page_t *new_head) {
   // if this node is already the head of the list or NULL
   if (VM_LIST.head == new_head || !new_head) 
@@ -178,19 +200,24 @@ void move_to_head(vm_page_t *new_head) {
   // next node points backward to previous node
   if (new_head->next)
     new_head->next->prev = new_head->prev;
+  else // if there is no next, then current node is the tail
+    VM_LIST.tail = new_head->prev;
 
   // they are no longer pointing to the "current" node
 
-  // current node points forward to list's head
-  new_head->prev = NULL;
-  new_head->next = VM_LIST.head;
-  // list's head points backward to current node
-  VM_LIST.head->prev = new_head;
-
-  // set list's head to current node (next node is old head,
-  // which points back to current node)
-  VM_LIST.head = new_head;
+  // push new_head to head
+  push_to_head(new_head);
 }
+
+// remove tail if it and its prev exist
+void pop_tail() {
+  if (VM_LIST.tail && VM_LIST.tail->prev) {
+    VM_LIST.tail = VM_LIST.tail->prev;
+    VM_LIST.tail->next = NULL;
+  }
+}
+//
+// end vm_list_t functions
 
 // verify page is cached
 //
