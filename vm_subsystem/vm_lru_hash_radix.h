@@ -46,6 +46,8 @@ typedef struct _vm_page {
   // bool      dirty;
   // bool      referenced;
   // may use these eventually, but idt they fit my use case now
+  struct _vm_page *prev;
+  struct _vm_page *next;
 
 } vm_page_t;
 

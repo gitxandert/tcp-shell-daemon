@@ -1,5 +1,7 @@
 #include "vm_lru_hash_radix.h"
 
+// NEED TO IMPLEMENT vm_push WITH EVERY NEW vm_page_t
+
 // we need:
 // - locks
 // - init functions   V
@@ -144,7 +146,7 @@ void radix_insert(ino_t inode, uint64_t page_index) {
   hashmap_entry_t *cur = VM_LIST.map->buckets[hash];
 
   if (!cur) {
-    // if there is no hashmap entry for this file, make one
+    // there is no hashmap entry for this file, make one
     cur = hashmap_entry_create(inode, page_index);
   else {
     // find the entry in the collision chain that corresponds to the file
