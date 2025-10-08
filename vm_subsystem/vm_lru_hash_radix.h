@@ -43,8 +43,9 @@
 typedef struct _vm_page {
   ino_t     inode;
   uint64_t  page_index;
-  bool      dirty;
-  bool      referenced;
+  // bool      dirty;
+  // bool      referenced;
+  // may use these eventually, but idt they fit my use case now
 
 } vm_page_t;
 
