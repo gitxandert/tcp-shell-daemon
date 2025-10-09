@@ -65,7 +65,11 @@ int client_shell(int fd) {
 
     pid_t pid = fork();
     if (pid == 0) {
-      execvp(argv[0], argv);
+
+      char ex[128] = "./";
+      strcat(ex, argv[0]);
+      
+      execvp(ex, argv);
       perror("exec failed");
       exit(1);
     } else if (pid > 0) {
