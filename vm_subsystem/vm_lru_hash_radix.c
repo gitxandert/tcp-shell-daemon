@@ -41,6 +41,8 @@ vm_page_t *vm_page_create(ino_t inode, uint64_t page_index) {
   new_page->inode = inode;
   new_page->page_index = page_index;
   // might set dirty and referenced bits eventually
+  vm_list_push(new_page);
+
   return new_page;
 }
 //
@@ -242,7 +244,7 @@ void radix_node_delete(ino_t inode, uint64_t page_index) {
 // vm_list_t functions
 //
 // moves a (new or existing) page to the head
-void vm_list_push(vm_page_t* new_head) {
+void vm_list_push(vm_page_t *new_head) {
   if (VM_LIST.head == NULL) {
     VM_LIST.head = new_head;
     VM_LIST.tail = VM_LIST.head;
