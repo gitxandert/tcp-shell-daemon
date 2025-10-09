@@ -96,3 +96,25 @@ typedef struct {
   hashmap_t     *map;
 
 } vm_list_t;
+
+// forward declarations
+void vm_list_init();
+
+vm_page_t *vm_page_create(ino_t, uint64_t);
+
+size_t hash_page(ino_t key, uint64_t page_index);
+hashmap_entry_t *hashmap_entry_create(ino_t, uint64_t);
+
+size_t get_radix_byte(uint64_t, int);
+void radix_descend(radix_node_t *, int, ino_t, uint64_t);
+void radix_manage_level(radix_node_t *, int, ino_t, uint64_t);
+void radix_insert(ino_t, uint64_t);
+bool get_node(radix_tree_t *, radix_node_t *, uint64_t);
+int radix_node_free(radix_tree_t *, uint64_t);
+void radix_node_delete(ino_t, uint64_t);
+
+void vm_list_push(vm_page_t *);
+void vm_list_move_to_head(vm_page_t *);
+void vm_list_pop();
+
+bool is_in_memory(ino_t, uint64_t);
