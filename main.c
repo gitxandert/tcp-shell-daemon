@@ -82,6 +82,23 @@ int client_shell(int fd) {
 }
 
 int main(void) {
+  if (setuid(0) < 0) {
+    fprintf(stderr, "Run as root\n");
+    exit(1);
+  }
+
+  char *pwd = malloc(128);
+  if (!(getcwd(pwd, 128))) {
+    perror("getcwd");
+    exit(1);
+  }
+
+  // set current working directory as root
+  if (chroot(pwd) < 0) {
+    perror("chroot");
+    exit(1);
+  }
+
   int sockfd, new_fd;
   struct addrinfo hints, *servinfo, *p;
   struct sockaddr_storage their_addr;
