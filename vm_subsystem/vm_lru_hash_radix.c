@@ -83,64 +83,31 @@ hashmap_entry_t *hashmap_entry_create(ino_t inode, uint64_t page_index) {
 size_t get_radix_byte(uint64_t page_index, int level) {
   int shift = level * RADIX_BITS;
   // shift right RADIX_BITS * level times and return just the rightmost RADIX_BITS bits
-  return (size_t)(page_index >> shift);
+  return (page_index >> shift) & ((1 << RADIX_BITS) - 1);
 }
 
-void radix_descend(radix_node_t *upper_level, int level, ino_t inode, uint64_t page_index) {
-    size_t rad_byte = get_radix_byte(inode, page_index);
-    radix_node_t *lower_level;
-
-    if (upper_level->slots[rad_byte]) {
-      // the lower level exists, so go down there
-      lower_level = upper_level->slots[rad_byte];
-      radix_manage_level(lower_level, level++, inode, page_index);
-    } else {
-      // the lower level does not exist yet; initialize here
-      lower_level = calloc(1, sizeof(radix_node_t));
-      
-      vm_page_t *new_page = vm_page_create(inode, page_index);
-      lower_level->page = new_page;
-    }
-}
-
-void radix_manage_level(radix_node_t *node, int level, ino_t inode, uint64_t page_index) {
-  if (node->page) {
-    // there's a page here, so the page has to descend,
-    // as well as the incoming inode + page_index
-    radix_descend(node, level, inode, node->page->page_index);
-    radix_descend(node, level, inode, page_index);
-    
-    // set page to NULL to bypass future checks
-    node->page = NULL;
-  } else {
-    size_t rad_byte = get_radix_byte(inode, page_index);
-    if (node->slots[rad_byte]) {
-      // there is a lower level at this index, so go down
-      radix_manage_level(node->slots[rad_byte], level++, inode, page_index);
-    } else {
-      // check to see if there are any lower levels at all
-      bool lower_level = false;
-      size_t i = 0;
-      while (!lower_level && i < RADIX_SIZE) {
-        if (node->slots[i])
-          lower_level = true;
-        i++;
-      }
-
-      // making a new page regardless, so allocate now
-      vm_page_t *new_page = vm_page_create(inode, page_index);
-
-      if (lower_level) {
-        radix_node_t *new_node = calloc(1, sizeof(radix_node_t));
-        new_node->page = new_page;
-        node->slots[--i] = new_node; // decrement i to go back to lower-level index
-      } else {
-        // everything is NULL, so set the current level's page
-        // I don't think this should ever occur tbh
-        node->page = new_page;
-      }
-    }
+void radix_insert_node(radix_node_t *node, int level, ino_t inode, uint64_t page_index) {
+  size_t cur_byte = get_radix_byte(page_index, level);
+  if (!node->slots[index]) {
+    // store page here
+    radix_node_t *leaf = calloc(1, sizeof(radix_node_t));
+    leaf->page = vm_page_create(inode, page_index);
+    node->slots[index] = leaf;
+    return;
   }
+
+  // if slot has node with a page, both descend
+  radix_node_t *next = node->slots[index];
+
+  if (next->page) {
+    vm_page_t *existing = next->page;
+    next->page = NULL;
+  
+    // move existing page deeper
+    radix_insert_node(next, level + 1, existing->inode, existing->page_index);
+  }
+
+  radix_insert_node(next, level + 1, inode, page_index);
 }
 
 void radix_insert(ino_t inode, uint64_t page_index) {
@@ -149,7 +116,8 @@ void radix_insert(ino_t inode, uint64_t page_index) {
 
   if (!cur) {
     // there is no hashmap entry for this file, make one
-    cur = hashmap_entry_create(inode, page_index);
+    VM_LIST.map->buckets[hash] = hashmap_entry_create(inode, page_index);
+  }
   else {
     // find the entry in the collision chain that corresponds to the file
     while (cur->key != inode && cur->next)
@@ -160,11 +128,11 @@ void radix_insert(ino_t inode, uint64_t page_index) {
       cur->next = hashmap_entry_create(inode, page_index);
     else
       // something already exists at root
-      radix_manage_level(cur->file->tree.root, 0, inode, page_index);
+      radix_insert_node(cur->file->tree.root, 0, inode, page_index);
   }
 }
 
-bool get_node(radix_tree_t *tree, radix_node_t *ret_node, uint64_t page_index) {
+bool get_node(radix_tree_t *tree, radix_node_t **ret_node, uint64_t page_index) {
   radix_node_t *cur = tree->root;
   int level = 0;
   // if there's no vm_page_t stored at the current node
@@ -180,7 +148,7 @@ bool get_node(radix_tree_t *tree, radix_node_t *ret_node, uint64_t page_index) {
   }
 
   if (cur && cur->page && cur->page->page_index == page_index) {
-    ret_node = cur;
+    *ret_node = cur;
     return true;
   }
 
@@ -200,8 +168,8 @@ int radix_node_free(radix_tree_t *tree, uint64_t page_index) {
       return -1;
     }
   } else {
-    radix_node_t *req_node;
-    if (get_node(tree, req_page, page_index)) {
+    radix_node_t *req_node = NULL;
+    if (get_node(tree, &req_node, page_index)) {
       // free the page, then the node
       free(req_node->page);
       free(req_node);
